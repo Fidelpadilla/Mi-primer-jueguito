@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Nave vs Meteoritos</title>
+<style>
+    body {
+        margin: 0;
+        overflow: hidden;
+        background: black;
+        color: white;
+        font-family: Arial;
+    }
+    canvas {
+        display: block;
+        margin: auto;
+        background: #050510;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = 600;
+canvas.height = 400;
+
+// Estados
+let gameState = "start"; // start | playing
+
+// 🚀 Nave
+const player = {
+    x: 50,
+    y: 180,
+    width: 50,
+    height: 50,
+    speed: 5,
+    lives: 3,
+    frame: 0
+};
+
+// ☄️ Meteoritos
+let meteors = [];
+
+// 🔫 Balas
+let bullets = [];
+
+// 💥 Explosiones
+let explosions = [];
+
+// Sistema
+let keys = {};
+let score = 0;
+let gameSpeed = 2;
+
+// Controles
+document.addEventListener("keydown", e => {
+    keys[e.key] = true;
+
+    if (gameState === "start" && e.key === "Enter") {
+        gameState = "playing";
+    }
+
+    if (e.key === " ") {
+        shoot();
+    }
+});
+
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+// 🚀 Dibujar nave
+function drawPlayer() {
+    player.frame++;
+    let color = player.frame % 20 < 10 ? "#00f0ff" : "#0077ff";
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y + player.height / 2);
+    ctx.lineTo(player.x + player.width, player.y);
+    ctx.lineTo(player.x + player.width, player.y + player.height);
+    ctx.closePath();
+    ctx.fill();
+
+    // fuego
+    ctx.fillStyle = "orange";
+    ctx.fillRect(player.x - 10, player.y + player.height/2 - 5, 10, 10);
+}
+
+// ☄️ Meteoritos
+function drawMeteors() {
+    meteors.forEach(m => {
+        m.frame++;
+        let pulse = Math.sin(m.frame * 0.1) * 3;
+
+        ctx.fillStyle = "#aa5500";
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, m.size + pulse, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+// 🔫 Balas
+function drawBullets() {
+    ctx.fillStyle = "yellow";
+    bullets.forEach(b => {
+        ctx.fillRect(b.x, b.y, 10, 3);
+    });
+}
+
+// 💥 Explosiones
+function drawExplosions() {
+    explosions.forEach((ex, i) => {
+        ex.frame++;
+        ctx.fillStyle = "orange";
+        ctx.beginPath();
+        ctx.arc(ex.x, ex.y, ex.frame * 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (ex.frame > 10) {
+            explosions.splice(i, 1);
+        }
+    });
+}
+
+// Movimiento
+function movePlayer() {
+    if (keys["ArrowUp"] && player.y > 0) player.y -= player.speed;
+    if (keys["ArrowDown"] && player.y < canvas.height - player.height) player.y += player.speed;
+    if (keys["ArrowLeft"] && player.x > 0) player.x -= player.speed;
+    if (keys["ArrowRight"] && player.x < canvas.width - player.width) player.x += player.speed;
+}
+
+// Disparo
+function shoot() {
+    if (gameState !== "playing") return;
+
+    bullets.push({
+        x: player.x + player.width,
+        y: player.y + player.height / 2
+    });
+}
+
+// Crear meteoritos
+function spawnMeteor() {
+    if (gameState !== "playing") return;
+
+    meteors.push({
+        x: canvas.width,
+        y: Math.random() * canvas.height,
+        size: 15 + Math.random() * 15,
+        speed: gameSpeed + Math.random() * 3,
+        frame: 0
+    });
+}
+
+// Updates
+function updateMeteors() {
+    meteors.forEach(m => m.x -= m.speed);
+    meteors = meteors.filter(m => m.x > -50);
+}
+
+function updateBullets() {
+    bullets.forEach(b => b.x += 7);
+    bullets = bullets.filter(b => b.x < canvas.width);
+}
+
+// 💥 Colisiones
+function checkCollision() {
+
+    // bala vs meteorito
+    for (let i = meteors.length - 1; i >= 0; i--) {
+        let m = meteors[i];
+
+        for (let j = bullets.length - 1; j >= 0; j--) {
+            let b = bullets[j];
+
+            if (
+                b.x < m.x + m.size &&
+                b.x + 10 > m.x &&
+                b.y < m.y + m.size &&
+                b.y + 3 > m.y
+            ) {
+                explosions.push({x: m.x, y: m.y, frame: 0});
+                meteors.splice(i, 1);
+                bullets.splice(j, 1);
+                score += 50;
+                break;
+            }
+        }
+    }
+
+    // jugador vs meteorito
+    for (let i = meteors.length - 1; i >= 0; i--) {
+        let m = meteors[i];
+
+        let dx = player.x + player.width/2 - m.x;
+        let dy = player.y + player.height/2 - m.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < m.size + player.width/2) {
+            explosions.push({x: player.x, y: player.y, frame: 0});
+            meteors.splice(i, 1);
+            player.lives--;
+
+            if (player.lives <= 0) {
+                alert("💀 Game Over\nPuntuación: " + score);
+                document.location.reload();
+            }
+        }
+    }
+}
+
+// UI
+function drawUI() {
+    ctx.fillStyle = "white";
+    ctx.font = "18px Arial";
+    ctx.fillText("Puntos: " + score, 10, 25);
+    ctx.fillText("Vidas: " + player.lives, 10, 50);
+}
+
+// 🎬 Pantalla inicio
+function drawStartScreen() {
+    ctx.fillStyle = "white";
+    ctx.font = "30px Arial";
+    ctx.fillText("NAVE VS METEORITOS", 90, 150);
+
+    ctx.font = "18px Arial";
+    ctx.fillText("Presiona ENTER para iniciar", 160, 200);
+    ctx.fillText("Flechas para moverte | Espacio para disparar", 90, 240);
+}
+
+// Loop
+function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (gameState === "start") {
+        drawStartScreen();
+    }
+
+    if (gameState === "playing") {
+        movePlayer();
+        updateMeteors();
+        updateBullets();
+        checkCollision();
+
+        drawPlayer();
+        drawMeteors();
+        drawBullets();
+        drawExplosions();
+        drawUI();
+
+        score++;
+
+        if (score % 200 === 0) gameSpeed += 0.5;
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Spawn
+setInterval(spawnMeteor, 600);
+
+// Start loop
+gameLoop();
+</script>
+
+</body>
+</html>
