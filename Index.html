@@ -2,7 +2,10 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
 <title>DHCP Race</title>
+
 <style>
 html,body{
  margin:0;
@@ -10,9 +13,13 @@ html,body{
  background:#001a00;
  color:white;
  font-family:Arial;
+ touch-action:none;
 }
 
-canvas{display:block}
+canvas{
+ display:block;
+ touch-action:none;
+}
 
 /* MENÚ */
 #startMenu{
@@ -23,7 +30,7 @@ canvas{display:block}
  text-align:center;
 }
 
-/* UI GAME OVER CENTRADA */
+/* GAME OVER */
 #gameOverUI{
  position:absolute;
  top:50%;
@@ -33,299 +40,522 @@ canvas{display:block}
  display:none;
 }
 
-/* TEXTO */
 #saturationText{
  color:red;
- font-size:26px;
+ font-size:28px;
  margin-bottom:15px;
-}
-
-/* BOTÓN */
-#retryBtn{
- display:block;
- margin:auto;
- padding:12px 28px;
- font-size:20px;
- cursor:pointer;
+ font-weight:bold;
+ letter-spacing:3px;
 }
 
 button{
- padding:12px 24px;
- font-size:18px;
+ padding:14px 28px;
+ font-size:20px;
  cursor:pointer;
+ border:none;
+ border-radius:10px;
+ background:#1f2937;
+ color:white;
+}
+
+/* móvil */
+@media(max-width:768px){
+
+ #saturationText{
+   font-size:22px;
+ }
+
+ button{
+   font-size:18px;
+   padding:12px 22px;
+ }
+
 }
 </style>
 </head>
+
 <body>
 
 <canvas id="c"></canvas>
 
 <div id="startMenu">
-  <h1>DHCP Race</h1>
-  <button id="startBtn">Iniciar</button>
+ <h1>DHCP Race</h1>
+ <button id="startBtn">Iniciar</button>
 </div>
 
 <div id="gameOverUI">
-  <div id="saturationText">SATURACIÓN</div>
-  <button id="retryBtn">Reintentar</button>
+ <div id="saturationText">SATURACIÓN</div>
+ <button id="retryBtn">Reintentar</button>
 </div>
 
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
+// =========================
+// RESIZE
+// =========================
+
 function resize(){
  canvas.width = innerWidth;
  canvas.height = innerHeight;
 }
+
 resize();
+
 addEventListener("resize", resize);
 
-// estado
+// =========================
+// AUDIO
+// =========================
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playTone(freq, duration, type="sine", volume=0.03){
+
+ const osc = audioCtx.createOscillator();
+ const gain = audioCtx.createGain();
+
+ osc.type = type;
+ osc.frequency.value = freq;
+
+ gain.gain.value = volume;
+
+ osc.connect(gain);
+ gain.connect(audioCtx.destination);
+
+ osc.start();
+
+ osc.stop(audioCtx.currentTime + duration);
+}
+
+// música ambiente
+setInterval(()=>{
+
+ if(started && !gameOver){
+
+   playTone(60,0.4,"sine",0.015);
+
+   setTimeout(()=>{
+     playTone(80,0.3,"triangle",0.01);
+   },200);
+
+ }
+
+},800);
+
+// =========================
+// ESTADO
+// =========================
+
 let current = null;
+
 let score = 0;
+
 let lives = 3;
+
 let gameOver = false;
+
 let started = false;
 
 let speedApproach = 0.03;
+
 const SPAWN_DELAY = 60;
+
 let spawnCooldown = 0;
 
-// minijuego
+// mini juego
 let inMiniGame = false;
+
 let phase = 1;
+
 let maxPhase = 3;
+
 let barX = 0;
+
 let barDir = 1;
+
 let barSpeed = 10;
+
 let zoneWidth = 120;
 
 const markerWidth = 6;
+
 let shake = 0;
 
-// spawn
-function spawnDevice(){
- let isBoss = (score > 0 && score % 5 === 0);
+// =========================
+// INPUT UNIVERSAL
+// PC + MÓVIL
+// =========================
 
- current = {
-   icon: isBoss ? "🖥️" : ["📱","💻","🖨️"][Math.floor(Math.random()*3)],
-   approach: 0,
-   isBoss
- };
-}
+function gameAction(){
 
-// INPUT MOUSE
-canvas.addEventListener("mousedown", ()=>{
  if(!started || gameOver) return;
 
  if(!inMiniGame && current){
+
    startMiniGame();
- } else if(inMiniGame){
+
+ }else if(inMiniGame){
+
    checkHit();
- }
-});
 
-// respaldo teclado
+ }
+
+}
+
+// mouse PC
+canvas.addEventListener("mousedown", gameAction);
+
+// touch móvil
+canvas.addEventListener("touchstart", (e)=>{
+ e.preventDefault();
+ gameAction();
+},{passive:false});
+
+// teclado respaldo
 addEventListener("keydown", e=>{
- if(e.key===" "){
-   canvas.dispatchEvent(new Event("mousedown"));
+ if(e.code === "Space"){
+   gameAction();
  }
 });
 
-// mini juego
+// =========================
+// SPAWN
+// =========================
+
+function spawnDevice(){
+
+ let isBoss = (score > 0 && score % 5 === 0);
+
+ current = {
+   icon:isBoss ? "🖥️" : ["📱","💻","🖨️"][Math.floor(Math.random()*3)],
+   approach:0,
+   isBoss
+ };
+
+ playTone(isBoss ? 90 : 140,0.08,"square",0.03);
+}
+
+// =========================
+// MINI JUEGO
+// =========================
+
 function startMiniGame(){
+
  inMiniGame = true;
+
  phase = 1;
+
  maxPhase = current.isBoss ? 5 : 3;
 
  barSpeed = current.isBoss ? 14 : 11;
+
  zoneWidth = 120;
+
+ playTone(300,0.05,"triangle",0.03);
 }
 
-// hit
 function checkHit(){
+
  let zoneStart = canvas.width/2 - zoneWidth/2;
+
  let zoneEnd = canvas.width/2 + zoneWidth/2;
+
  let markerCenter = barX + markerWidth/2;
 
  if(markerCenter > zoneStart-2 && markerCenter < zoneEnd+2){
 
+   playTone(500,0.05,"sine",0.04);
+
    if(phase < maxPhase){
+
      phase++;
 
      barSpeed += current.isBoss ? 5 : 4;
+
      zoneWidth -= current.isBoss ? 25 : 20;
 
-     if(current.isBoss) zoneWidth -= 2;
+     if(current.isBoss){
+       zoneWidth -= 2;
+     }
 
-   } else {
+   }else{
+
      score += current.isBoss ? 3 : 1;
+
+     playTone(700,0.1,"triangle",0.04);
+
      current = null;
+
      inMiniGame = false;
+
      spawnCooldown = SPAWN_DELAY;
    }
 
- } else {
+ }else{
+
+   playTone(100,0.2,"sawtooth",0.05);
+
    lives--;
+
    shake = 10;
+
    current = null;
+
    inMiniGame = false;
+
    spawnCooldown = SPAWN_DELAY;
  }
 }
 
-// update
+// =========================
+// UPDATE
+// =========================
+
 function update(){
+
  if(!started) return;
 
  if(!current){
+
    if(spawnCooldown > 0){
+
      spawnCooldown--;
-   } else {
+
+   }else{
+
      spawnDevice();
+
    }
  }
 
  if(current && !inMiniGame){
+
    let speed = current.isBoss ? 0.008 : speedApproach;
+
    current.approach += speed;
  }
 
  if(current && current.approach >= 1){
+
+   playTone(70,0.3,"sawtooth",0.05);
+
    lives--;
+
    shake = 15;
+
    current = null;
+
    spawnCooldown = SPAWN_DELAY;
  }
 
  speedApproach += 0.00005;
 
  if(inMiniGame){
+
    barX += barDir * barSpeed;
-   if(barX<=0 || barX>=canvas.width) barDir*=-1;
+
+   if(barX<=0 || barX>=canvas.width){
+
+     barDir *= -1;
+
+     playTone(220,0.02,"square",0.01);
+   }
  }
 
  if(lives<=0){
+
    gameOver = true;
+
+   playTone(40,1,"sawtooth",0.06);
+
    document.getElementById("gameOverUI").style.display = "block";
  }
 
  if(shake>0) shake--;
 }
 
-// fondo
+// =========================
+// DIBUJO
+// =========================
+
 function drawBackground(){
+
  let t = Date.now()*0.002;
 
  for(let i=0;i<60;i++){
+
    let x = (i*53 % canvas.width);
-   let y = (Math.sin(t + i)*50 + i*25) % canvas.height;
+
+   let y = (Math.sin(t+i)*50 + i*25) % canvas.height;
 
    ctx.fillStyle = "rgba(0,255,0,0.05)";
+
    ctx.fillRect(x,y,2,20);
  }
 }
 
-// dispositivo
 function drawDevice(){
+
  if(!current) return;
 
  let pulse = Math.sin(Date.now()*0.02)*8;
+
  let scale = 0.3 + current.approach * 2;
 
  let baseSize = current.isBoss ? 200 : 120;
+
  let size = baseSize * scale + pulse;
 
  ctx.save();
+
  ctx.translate(canvas.width/2, canvas.height/2);
 
  if(current.isBoss){
+
    ctx.fillStyle = "rgba(0,255,100,0.15)";
+
    ctx.beginPath();
+
    ctx.arc(0,0,size*0.8,0,Math.PI*2);
+
    ctx.fill();
 
    ctx.strokeStyle = "lime";
+
    ctx.lineWidth = 3;
-   ctx.strokeRect(-size/2, -size/2, size, size);
+
+   ctx.strokeRect(-size/2,-size/2,size,size);
 
    ctx.fillStyle = "#00aa44";
- } else {
+
+ }else{
+
    ctx.fillStyle = "#022c02";
  }
 
- ctx.fillRect(-size/2, -size/2, size, size);
+ ctx.fillRect(-size/2,-size/2,size,size);
 
  ctx.font = `${50*scale}px Arial`;
+
  ctx.textAlign = "center";
+
  ctx.textBaseline = "middle";
+
  ctx.fillText(current.icon,0,0);
 
  ctx.restore();
 }
 
-// minijuego
 function drawMiniGame(){
+
  let y = canvas.height - 120;
+
  let zoneStart = canvas.width/2 - zoneWidth/2;
 
  let shakePower = current.isBoss ? 6 : 3;
+
  let shakeX = (Math.random()-0.5)*shakePower;
+
  let shakeY = (Math.random()-0.5)*shakePower;
 
  ctx.fillStyle = "#003300";
+
  ctx.fillRect(100,y,canvas.width-200,20);
 
  ctx.fillStyle = current.isBoss ? "#00ffaa" : "#00ff00";
- ctx.fillRect(zoneStart + shakeX, y + shakeY, zoneWidth, 20);
+
+ ctx.fillRect(zoneStart+shakeX,y+shakeY,zoneWidth,20);
 
  ctx.fillStyle = "white";
+
  ctx.fillRect(barX,y-5,markerWidth,30);
 }
 
-// manos
 function drawHands(){
+
  let t = Date.now()*0.005;
 
  let offset = Math.sin(t)*10;
+
  let squeeze = current ? current.approach * 20 : 0;
 
- ctx.fillStyle="#3a4a5a";
+ ctx.fillStyle = "#3a4a5a";
 
+ // izquierda
  ctx.beginPath();
- ctx.ellipse(canvas.width*0.35 + offset, canvas.height-40 - squeeze, 80, 40, 0,0,Math.PI*2);
+
+ ctx.ellipse(
+   canvas.width*0.35 + offset,
+   canvas.height-40 - squeeze,
+   80,
+   40,
+   0,0,Math.PI*2
+ );
+
  ctx.fill();
 
+ // derecha
  ctx.beginPath();
- ctx.ellipse(canvas.width*0.65 - offset, canvas.height-40 - squeeze, 80, 40, 0,0,Math.PI*2);
+
+ ctx.ellipse(
+   canvas.width*0.65 - offset,
+   canvas.height-40 - squeeze,
+   80,
+   40,
+   0,0,Math.PI*2
+ );
+
  ctx.fill();
 }
 
-// UI
 function drawUI(){
- ctx.fillStyle="lime";
- ctx.fillText("Saturación:",20,30);
 
- ctx.fillStyle="red";
- ctx.fillRect(110,18,(lives/3)*120,15);
+ ctx.fillStyle = "lime";
 
- ctx.fillText("Puntos: "+score,20,60);
+ ctx.font = window.innerWidth < 768 ? "16px Arial" : "20px Arial";
+
+ ctx.fillText("Saturación:",20,35);
+
+ ctx.fillStyle = "red";
+
+ ctx.fillRect(140,18,(lives/3)*120,20);
+
+ ctx.strokeStyle = "white";
+
+ ctx.strokeRect(140,18,120,20);
+
+ ctx.fillStyle = "white";
+
+ ctx.fillText("Puntos: "+score,20,70);
 }
 
-// loop
+// =========================
+// LOOP
+// =========================
+
 function loop(){
+
  ctx.clearRect(0,0,canvas.width,canvas.height);
 
  drawBackground();
 
  if(started && !gameOver){
+
    ctx.save();
-   ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
+
+   ctx.translate(
+     (Math.random()-0.5)*shake,
+     (Math.random()-0.5)*shake
+   );
 
    update();
+
    drawDevice();
+
    if(inMiniGame) drawMiniGame();
+
    drawHands();
 
    ctx.restore();
@@ -336,25 +566,41 @@ function loop(){
  requestAnimationFrame(loop);
 }
 
-// botones
+// =========================
+// BOTONES
+// =========================
+
 document.getElementById("startBtn").onclick = ()=>{
+
+ audioCtx.resume();
+
  started = true;
+
  spawnCooldown = SPAWN_DELAY;
- document.getElementById("startMenu").style.display="none";
+
+ document.getElementById("startMenu").style.display = "none";
 };
 
 document.getElementById("retryBtn").onclick = ()=>{
+
  current = null;
+
  score = 0;
+
  lives = 3;
+
  gameOver = false;
+
  spawnCooldown = SPAWN_DELAY;
+
  speedApproach = 0.03;
 
- document.getElementById("gameOverUI").style.display="none";
+ document.getElementById("gameOverUI").style.display = "none";
 };
 
 loop();
+
 </script>
+
 </body>
 </html>
